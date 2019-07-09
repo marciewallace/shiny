@@ -1,0 +1,168 @@
+---
+title: "Final Project"
+author: "Marcie Wallace"
+date: "December 6, 2018"
+output: html_document
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(fastcluster)
+library(caret)
+library(gplots)
+library(tidyverse)
+library(dendextend)
+library(colorspace)
+library(dataPreparation)
+library(NbClust)
+library(factoextra)
+library(shiny)
+library(d3heatmap)
+library(RColorBrewer)
+library(cluster)
+library(fpc)
+library(circlize)
+```
+
+```{r library, echo=FALSE, include = FALSE}
+bf <- read.csv("~/Desktop/Final_Project/BlackFriday.csv")
+
+
+set.seed(123)
+df1 <- bf[sample(1:nrow(bf), 1000,
+              replace=FALSE),]
+
+df1$User_ID <- NULL
+df1$Product_ID <- NULL
+
+df1$Gender <- as.factor(df1$Gender)
+df1$Age <- as.factor(df1$Age)
+df1$Occupation <- as.factor(df1$Occupation)
+df1$City_Category <- as.factor(df1$City_Category)
+df1$Stay_In_Current_City_Years <- as.factor(df1$Stay_In_Current_City_Years)
+df1$Marital_Status <- as.factor(df1$Marital_Status)
+df1$Product_Category_1 <- as.factor(df1$Product_Category_1)
+df1$Product_Category_2 <- as.factor(df1$Product_Category_2)
+df1$Product_Category_3 <- as.factor(df1$Product_Category_3)
+
+encoding <- build_encoding(dataSet = df1, cols = c("Gender", "Age", "Occupation", "City_Category", "Stay_In_Current_City_Years", "Marital_Status", "Product_Category_1", "Product_Category_2", "Product_Category_3"), verbose = TRUE)
+
+df2 <- one_hot_encoder(dataSet = df1, encoding = encoding, drop = TRUE, verbose = TRUE)
+
+```
+
+```{r bf, echo=FALSE}
+   # Application title
+ui <- fluidPage(
+ titlePanel("Black Friday Purchase Information"),
+   # Sidebar with a slider input for number of bins 
+   sidebarLayout(
+      sidebarPanel(
+        # Input: Slider for the number of bins ----
+      sliderInput("n",
+                 "Number of clusters:",
+                  value = 1,
+                  min = 2,
+                  max = 25)),
+  
+      # Show a plot of the generated distribution
+      mainPanel(
+        
+        # Output: Tabset w/ plot, summary, and table ----
+        tabsetPanel(type = "tabs",
+                    tabPanel("Choosing Number of Clusters", plotOutput("choose")),
+                    tabPanel("Dendrogram", plotOutput("dend")),
+                    tabPanel("Heatmap", plotOutput("heatmap")),
+                    tabPanel("Cluster Information", tableOutput("table")),
+                    tabPanel("Summary", includeHTML("summarytext.html"))
+                    
+      )
+   )
+ )
+)
+
+
+
+
+```
+
+
+```{r, echo=FALSE}
+# Define server logic required to draw a histogram ----
+server <- function(input, output) {
+  
+  c <- reactive({
+    clust_num(input$n)
+  })  
+  
+output$choose <- renderPlot({
+ fviz_nbclust(df2, FUN = hcut, method = "silhouette", k.max = 25)
+})
+
+output$dend <- renderPlot({
+  d_df <- dist(df2) 
+  hc_df <- hclust(d_df, method = "complete")
+  clust_num <- input$n
+  dend <- as.dendrogram(hc_df)
+  dend <- color_branches(dend, k=clust_num)
+
+    plot(dend,
+       main = "Clustered Data Set",
+     horiz =  FALSE, nodePar = list(cex = .1), ylab = "Height", leaflab = "none")
+  
+})
+
+  
+output$heatmap<-renderPlot({
+  #my_palette <- colorRampPalette(c('red','yellow','green'))(256)
+  
+  d_df <- dist(df2)
+  hc_df <- hclust(d_df, method = "complete")
+  clust_num <- input$n
+  dend <- as.dendrogram(hc_df)
+  dend <- color_branches(dend, k=clust_num)
+
+  heatmap.2(as.matrix(df2),
+            dendrogram = "row",
+            Rowv = dend,
+            cexRow=1.25,
+            cexCol=0.75,          # decrease font size of row/column labels
+            #col = my_palette,     # arguments to read in custom colors
+            #colsep=c(1,2,3,4,5,6),      # Adding on the separators that will clarify plot even more
+            #rowsep = c(6,14,18,25,30,36,42,47),
+            sepcolor="black",
+            sepwidth=c(0.01,0.01),
+            #margins=c(10,10),
+            scale="none",         # we have already scaled the data
+            trace="none",
+            labRow = FALSE)
+})
+
+output$table <- renderTable({
+  d_df <- dist(df2)
+  hc_df <- hclust(d_df, method = "complete")
+  sub_grp <- cutree(hc_df, k = input$n)
+  table(sub_grp)
+  agg <- aggregate(df2[,1], list(sub_grp), mean)
+  agg
+  data.frame(Cluster=agg[,1], Freq=as.vector(table(sub_grp)), Purchase=agg[,-1])
+  
+})
+  
+
+getPage <-  function() {
+   return(includeHTML("summarytext.html"))
+}
+output$summary <-renderUI({getPage()})
+}
+
+
+shinyApp(ui, server)
+
+
+```
+
+
+
